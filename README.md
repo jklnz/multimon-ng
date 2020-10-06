@@ -9,8 +9,9 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 - DTMF
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
 - EEA EIA CCIR
-- MORSE CW
+- MORSE_CW
 - X10
+- *TONE (added in this fork)*
 
 multimon-ng can be built using either qmake or CMake:
 ```
@@ -41,6 +42,9 @@ GNURadio can also generate the format using the file sink in input mode *short*.
 You can also "pipe" raw samples into multimon-ng using something like
 ```sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw - | ./multimon-ng -```
 (note the trailing dash)
+
+As a last example, here is how you can use it in combination with RTL-SDR:
+```rtl_fm -f 403600000 -s 22050 | multimon-ng -t raw -a FMSFSK -a AFSK1200 /dev/stdin```
 
 Packaging
 ---------

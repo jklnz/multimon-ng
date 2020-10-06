@@ -8,6 +8,7 @@
 *.so
 bin-*
 build
+cmake-build-debug
 
 # Packages #
 ############
@@ -39,3 +40,4 @@ Icon?
 ehthumbs.db
 Thumbs.db
 *.bak
+.idea

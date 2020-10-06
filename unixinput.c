@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2017
+ *      Copyright (C) 2012-2019
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
@@ -30,7 +30,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 #include <errno.h>
@@ -91,12 +93,15 @@ static bool is_startline = true;
 static int timestamp = 0;
 static char *label = NULL;
 
+extern bool fms_justhex;
+
 extern int pocsag_mode;
 extern int pocsag_invert_input;
 extern int pocsag_error_correction;
 extern int pocsag_show_partial_decodes;
 extern int pocsag_heuristic_pruning;
 extern int pocsag_prune_empty;
+extern bool pocsag_init_charset(char *charset);
 
 extern int aprs_mode;
 extern int cw_dit_length;
@@ -104,6 +109,8 @@ extern int cw_gap_length;
 extern int cw_threshold;
 extern bool cw_disable_auto_threshold;
 extern bool cw_disable_auto_timing;
+
+extern unsigned int tone_freq;
 
 void quit(void);
 
@@ -269,7 +276,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     
     /* Create the recording stream */
     if (!(s = pa_simple_new(NULL, "multimon-ng", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
-        fprintf(stderr, __FILE__": pa_simple_new() failed: %s\n", pa_strerror(error));
+        fprintf(stderr, "unixinput.c: pa_simple_new() failed: %s\n", pa_strerror(error));
         exit(4);
     }
     
@@ -456,6 +463,9 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         // read from stdin and force raw input
         fd = 0;
         type = "raw";
+#ifdef WINDOWS
+        setmode(fd, O_BINARY);
+#endif
     }
     else if (!type || !strcmp(type, "raw")) {
 #ifdef WINDOWS
@@ -572,19 +582,22 @@ static const char usage_str[] = "\n"
         "  -m         : Mute SoX warnings\n"
         "  -r         : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
         "  -n         : Don't flush stdout, increases performance.\n"
+        "  -j         : FMS: Just output hex data and CRC, no parsing.\n"
         "  -e         : POCSAG: Hide empty messages.\n"
         "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
         "  -p         : POCSAG: Show partially received messages.\n"
-        "  -f <mode>  : POCSAG: Disables auto-detection and forces decoding of data as <mode>\n"
-        "                       (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
+        "  -f <mode>  : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
+        "                       (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
         "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
         "                       Lower levels increase performance and lower false positives.\n"
+        "  -C <cs>    : POCSAG: Set Charset.\n"
         "  -o         : CW: Set threshold for dit detection (default: 500)\n"
         "  -d         : CW: Dit length in ms (default: 50)\n"
         "  -g         : CW: Gap length in ms (default: 50)\n"
         "  -x         : CW: Disable auto threshold detection\n"
         "  -y         : CW: Disable auto timing detection\n"
+        "  -T <freq>  : TONE: Frequency in Hz\n"
         "  --timestamp: Add a time stamp in front of every printed line\n"
         "  --label    : Add a label to the front of every printed line\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
@@ -607,10 +620,11 @@ int main(int argc, char *argv[])
       {
         {"timestamp", no_argument, &timestamp, 1},
         {"label", required_argument, NULL, 'l'},
+        {"charset", required_argument, NULL, 'C'},
         {0, 0, 0, 0}
       };
 
-    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu", long_options, NULL)) != EOF) {
+    while ((c = getopt_long(argc, argv, "t:a:s:v:f:b:C:o:d:g:cqhAmrnjeuipxyT:", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -659,6 +673,10 @@ int main(int argc, char *argv[])
             
         case 'm':
             mute_sox = 1;
+            break;
+
+        case 'j':
+            fms_justhex = true;
             break;
             
         case 'r':
@@ -727,9 +745,16 @@ intypefound:
                     pocsag_mode = POCSAG_MODE_ALPHA;
                 else if(!strncmp("skyper",optarg, sizeof("skyper")))
                     pocsag_mode = POCSAG_MODE_SKYPER;
+                else if(!strncmp("auto",optarg, sizeof("auto")))
+                    pocsag_mode = POCSAG_MODE_AUTO;
             }else fprintf(stderr, "a POCSAG mode has already been selected!\n");
             break;
             
+        case 'C':
+    		if (!pocsag_init_charset(optarg))
+    			errflg++;
+        	break;
+        	
         case 'n':
             dont_flush = true;
             break;
@@ -769,18 +794,28 @@ intypefound:
         case 'y':
             cw_disable_auto_timing = true;
             break;
-	case 'l':
-	    label = optarg;
-	    break;
+            
+        case 'l':
+            label = optarg;
+            break;
+
+        case 'T':
+            tone_freq = strtoul(optarg, 0, 0);
+            if(tone_freq == 0)
+            {
+                fprintf(stderr, "Invalid frequency !\n");
+            }
+            break;
         }
     }
 
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.1.4\n" 
+    fprintf(stderr, "multimon-ng 1.2.8\n"
         "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "  (C) 2012-2017 by Elias Oenal\n"
+        "  (C) 2012-2019 by Elias Oenal\n"
+        "  (C) 2019-2020 by Valentin Saugnier\n"
         "Available demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
         fprintf(stderr, " %s", dem[i]->name);

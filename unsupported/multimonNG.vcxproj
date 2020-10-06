@@ -89,6 +89,7 @@ mkcostab.exe</Command>
     <ClCompile Include="demod_afsk24_3.c" />
     <ClCompile Include="demod_clipfsk.c" />
     <ClCompile Include="demod_dtmf.c" />
+    <ClCompile Include="demod_tone.c" />
     <ClCompile Include="demod_eas.c" />
     <ClCompile Include="demod_fsk96.c" />
     <ClCompile Include="demod_hapn48.c" />
