@@ -12,24 +12,18 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 - MORSE CW
 - X10
 
-multimon-ng can be built using either qmake or CMake:
+
+
+To build multimon-ng on Windows using qmake/mingw32/qt:
 ```
 mkdir build
 cd build
 qmake ../multimon-ng.pro
-make
-sudo make install
-```
-```
-mkdir build
-cd build
-cmake ..
-make
-sudo make install
+mingw32-make
 ```
 
-The installation prefix can be set by passing a 'PREFIX' parameter to qmake. e.g:
-```qmake multimon-ng.pro PREFIX=/usr/local```
+
+
 
 So far multimon-ng has been successfully built on Arch Linux, Debian, Gentoo, Kali Linux, Ubuntu, OS X, Windows and FreeBSD.
 (On Windows using the Qt-MinGW build environment, as well as Cygwin and VisualStudio/MSVC)
